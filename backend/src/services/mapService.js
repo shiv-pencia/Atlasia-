@@ -1,3 +1,15 @@
+export async function searchPlace(place) {
+  const response = await fetch(
+    `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(place)}&format=json`,
+    {
+      headers: {
+        'User-Agent': 'AtlasiaTravelPlanner/1.0'
+      }
+    }
+  );
+  return response.json();
+}
+
 export const mapService = {
   searchPlaces: async (query) => {
     if (!query || query.trim().length === 0) return [];
