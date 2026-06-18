@@ -8,8 +8,10 @@ const router = Router();
 router.use(protect);
 
 router.get('/search', mapController.searchPlaces);
+router.get('/reverse', mapController.reverseGeocode);
+router.post('/route', mapController.getRoute);
+router.post('/multi-route', mapController.getMultiStopRoute);
 router.get('/place/:id', mapController.getPlaceDetails);
-router.post('/route', mapController.getRouteDirections);
 router.get('/weather', mapController.getWeather);
 
 export default router;

@@ -1,5 +1,5 @@
 import React from 'react';
-import { MapContainer, TileLayer, useMapEvents } from 'react-leaflet';
+import { MapContainer, TileLayer, useMapEvents, useMap } from 'react-leaflet';
 
 // Internal helper component to hook Leaflet map events
 const MapEvents = ({ onClick }) => {
@@ -13,7 +13,26 @@ const MapEvents = ({ onClick }) => {
   return null;
 };
 
-export const MapView = ({ center, zoom = 12, children, style = {}, onMapClick }) => {
+// Internal helper component to auto-fit map bounds dynamically
+const MapBoundsFitter = ({ coords }) => {
+  const map = useMap();
+  
+  React.useEffect(() => {
+    if (coords && coords.length > 0) {
+      // Format coordinates into [lat, lng] arrays for Leaflet's bounds
+      const bounds = coords.map(c => [c.lat || c[0], c.lng || c[1]]);
+      if (bounds.length === 1) {
+        map.setView(bounds[0], 12);
+      } else if (bounds.length > 1) {
+        map.fitBounds(bounds, { padding: [50, 50] });
+      }
+    }
+  }, [coords, map]);
+  
+  return null;
+};
+
+export const MapView = ({ center, zoom = 12, children, style = {}, onMapClick, boundsCoords }) => {
   // Convert center object { lat, lng } to array [lat, lng] for Leaflet
   const mapCenter = center ? [center.lat, center.lng] : [35.0116, 135.7681];
 
@@ -23,7 +42,7 @@ export const MapView = ({ center, zoom = 12, children, style = {}, onMapClick })
 
   React.Children.forEach(children, (child) => {
     if (!child) return;
-    if (child.type && (child.type.name === 'Marker' || child.type.name === 'RouteLayer')) {
+    if (child.type && (child.type.name === 'Marker' || child.type.name === 'RouteLayer' || child.type.name === 'Polyline')) {
       leafletElements.push(child);
     } else {
       overlayElements.push(child);
@@ -53,6 +72,7 @@ export const MapView = ({ center, zoom = 12, children, style = {}, onMapClick })
           url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
         />
         <MapEvents onClick={onMapClick} />
+        <MapBoundsFitter coords={boundsCoords} />
         {leafletElements}
       </MapContainer>
 

@@ -1,9 +1,9 @@
 export async function searchPlace(place) {
   const response = await fetch(
-    `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(place)}&format=json`,
+    `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(place)}&format=jsonv2&limit=5`,
     {
       headers: {
-        'User-Agent': 'AtlasiaTravelPlanner/1.0'
+        'User-Agent': 'TripPlannerApp'
       }
     }
   );
@@ -11,17 +11,29 @@ export async function searchPlace(place) {
 }
 
 export const mapService = {
+  searchPlace: async (query) => {
+    if (!query || query.trim().length === 0) return [];
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=jsonv2&limit=5`,
+        {
+          headers: {
+            'User-Agent': 'TripPlannerApp'
+          }
+        }
+      );
+      return await response.json();
+    } catch (error) {
+      console.error('Error in Nominatim searchPlace:', error);
+      throw error;
+    }
+  },
+
   searchPlaces: async (query) => {
     if (!query || query.trim().length === 0) return [];
     try {
-      const response = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5`, {
-        headers: {
-          'User-Agent': 'AtlasiaTravelPlanner/1.0'
-        }
-      });
-      const data = await response.json();
-      
-      return (data || []).map((item) => ({
+      const rawResults = await mapService.searchPlace(query);
+      return (rawResults || []).map((item) => ({
         id: String(item.place_id),
         name: item.display_name,
         coordinates: {
@@ -35,11 +47,29 @@ export const mapService = {
     }
   },
 
+  reverseGeocode: async (lat, lon) => {
+    if (lat === undefined || lon === undefined) return null;
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=jsonv2`,
+        {
+          headers: {
+            'User-Agent': 'TripPlannerApp'
+          }
+        }
+      );
+      return await response.json();
+    } catch (error) {
+      console.error('Error in Nominatim reverseGeocode:', error);
+      throw error;
+    }
+  },
+
   getPlaceDetails: async (placeId) => {
     try {
       const response = await fetch(`https://nominatim.openstreetmap.org/details?place_id=${placeId}&format=json`, {
         headers: {
-          'User-Agent': 'AtlasiaTravelPlanner/1.0'
+          'User-Agent': 'TripPlannerApp'
         }
       });
       const data = await response.json();
@@ -64,45 +94,114 @@ export const mapService = {
     }
   },
 
-  getRouteDirections: async (origin, destination) => {
-    if (!origin || !destination) return null;
+  getRoute: async (start, end) => {
+    let startLat, startLng, endLat, endLng;
+    if (Array.isArray(start)) {
+      startLat = start[0];
+      startLng = start[1];
+    } else if (start && typeof start === 'object') {
+      startLat = start.lat;
+      startLng = start.lng;
+    }
+
+    if (Array.isArray(end)) {
+      endLat = end[0];
+      endLng = end[1];
+    } else if (end && typeof end === 'object') {
+      endLat = end.lat;
+      endLng = end.lng;
+    }
+
+    if (startLat === undefined || startLng === undefined || endLat === undefined || endLng === undefined) {
+      throw new Error('Invalid start or end coordinates. Coordinates must be [lat, lng] or { lat, lng }');
+    }
 
     try {
-      // 1. Geocode origin
+      const url = `https://router.project-osrm.org/route/v1/driving/${startLng},${startLat};${endLng},${endLat}?overview=full&geometries=geojson`;
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (!data.routes || data.routes.length === 0) {
+        throw new Error('No route found');
+      }
+
+      const route = data.routes[0];
+      return {
+        distance: route.distance,
+        duration: route.duration,
+        geometry: route.geometry
+      };
+    } catch (error) {
+      console.error('Error in OSRM getRoute:', error);
+      throw error;
+    }
+  },
+
+  getMultiStopRoute: async (coordinates) => {
+    if (!coordinates || !Array.isArray(coordinates) || coordinates.length < 2) {
+      throw new Error('At least 2 coordinate pairs are required for multi-stop routing');
+    }
+
+    const coordStrings = coordinates.map((coord) => {
+      let lat, lng;
+      if (Array.isArray(coord)) {
+        lat = coord[0];
+        lng = coord[1];
+      } else if (coord && typeof coord === 'object') {
+        lat = coord.lat;
+        lng = coord.lng;
+      }
+      return `${lng},${lat}`;
+    });
+
+    const coordsParam = coordStrings.join(';');
+
+    try {
+      const url = `https://router.project-osrm.org/route/v1/driving/${coordsParam}?overview=full&geometries=geojson`;
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (!data.routes || data.routes.length === 0) {
+        throw new Error('No multi-stop route found');
+      }
+
+      const route = data.routes[0];
+      return {
+        distance: route.distance,
+        duration: route.duration,
+        geometry: route.geometry
+      };
+    } catch (error) {
+      console.error('Error in OSRM getMultiStopRoute:', error);
+      throw error;
+    }
+  },
+
+  getRouteDirections: async (origin, destination) => {
+    try {
       const originResponse = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(origin)}&format=json&limit=1`, {
-        headers: { 'User-Agent': 'AtlasiaTravelPlanner/1.0' }
+        headers: { 'User-Agent': 'TripPlannerApp' }
       });
       const originData = await originResponse.json();
       if (!originData || originData.length === 0) throw new Error(`Could not geocode origin: ${origin}`);
       const originLat = parseFloat(originData[0].lat);
       const originLon = parseFloat(originData[0].lon);
 
-      // 2. Geocode destination
       const destResponse = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(destination)}&format=json&limit=1`, {
-        headers: { 'User-Agent': 'AtlasiaTravelPlanner/1.0' }
+        headers: { 'User-Agent': 'TripPlannerApp' }
       });
       const destData = await destResponse.json();
       if (!destData || destData.length === 0) throw new Error(`Could not geocode destination: ${destination}`);
       const destLat = parseFloat(destData[0].lat);
       const destLon = parseFloat(destData[0].lon);
 
-      // 3. Query OSRM Routing API
-      const osrmResponse = await fetch(`http://router.project-osrm.org/route/v1/driving/${originLon},${originLat};${destLon},${destLat}?overview=full&geometries=geojson`);
-      const osrmData = await osrmResponse.json();
-
-      if (!osrmData.routes || osrmData.routes.length === 0) {
-        throw new Error('No routes found between these locations');
-      }
-
-      const route = osrmData.routes[0];
+      const route = await mapService.getRoute([originLat, originLon], [destLat, destLon]);
       const distanceKm = (route.distance / 1000).toFixed(1) + ' km';
-      
       const durationSec = route.duration;
       const hours = Math.floor(durationSec / 3600);
       const minutes = Math.floor((durationSec % 3600) / 60);
       const durationStr = hours > 0 ? `${hours} hours ${minutes} mins` : `${minutes} mins`;
 
-      // OSRM returns coordinates in [lng, lat] format, map to { lat, lng }
       const routePoints = route.geometry.coordinates.map((coord) => ({
         lat: coord[1],
         lng: coord[0]
@@ -116,8 +215,7 @@ export const mapService = {
         routePoints
       };
     } catch (error) {
-      console.error('Error in OSRM getRouteDirections:', error);
-      // Fallback to coordinates
+      console.error('Error in getRouteDirections:', error);
       return {
         origin,
         destination,
@@ -136,11 +234,10 @@ export const mapService = {
     let longitude = lng ? parseFloat(lng) : null;
     let locationName = q || (latitude && longitude ? `Location (${latitude.toFixed(2)}, ${longitude.toFixed(2)})` : 'Kyoto, Japan');
 
-    // If query q is provided but no lat/lng, geocode it
     if (q && (!latitude || !longitude)) {
       try {
         const geoResponse = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1`, {
-          headers: { 'User-Agent': 'AtlasiaTravelPlanner/1.0' }
+          headers: { 'User-Agent': 'TripPlannerApp' }
         });
         const geoData = await geoResponse.json();
         if (geoData && geoData.length > 0) {
@@ -153,7 +250,6 @@ export const mapService = {
       }
     }
 
-    // Default to Kyoto if we still don't have coords
     if (latitude === null || longitude === null) {
       latitude = 35.0116;
       longitude = 135.7681;
@@ -166,7 +262,6 @@ export const mapService = {
       
       const current = weatherData.current_weather;
       
-      // Map WMO weather codes to conditions
       const wmoCodes = {
         0: 'Clear sky',
         1: 'Mainly clear', 2: 'Partly cloudy', 3: 'Overcast',
@@ -182,7 +277,6 @@ export const mapService = {
       const temperature = current ? `${Math.round(current.temperature)}°C` : '24°C';
       const windSpeed = current ? `${current.windspeed} km/h` : '12 km/h';
 
-      // Generate 3-day forecast
       const daily = weatherData.daily;
       const forecast = [];
       if (daily && daily.time) {

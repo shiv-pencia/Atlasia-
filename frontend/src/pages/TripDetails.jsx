@@ -14,6 +14,7 @@ import MapView from '../components/map/MapView';
 import Marker from '../components/map/Marker';
 import RouteLayer from '../components/map/RouteLayer';
 import SearchBox from '../components/map/SearchBox';
+import { Polyline } from 'react-leaflet';
 
 export const TripDetails = () => {
   const { id } = useParams();
@@ -52,6 +53,8 @@ export const TripDetails = () => {
 
   // Map state
   const [mapCenter, setMapCenter] = useState({ lat: 35.0116, lng: 135.7681 });
+  const [routeDirections, setRouteDirections] = useState(null);
+  const [routeLoading, setRouteLoading] = useState(false);
 
   useEffect(() => {
     fetchTripDetails(id);
@@ -149,6 +152,58 @@ export const TripDetails = () => {
     };
     geocodeDest();
   }, [activeTrip.destination, activeTrip.itinerary]);
+
+  // Fetch OSRM route directions connecting pinned coordinate points
+  useEffect(() => {
+    const fetchRoute = async () => {
+      const coords = [];
+      (activeTrip.itinerary || []).forEach((item) => {
+        if (item.desc && item.desc.includes('GPS:')) {
+          const match = item.desc.match(/GPS:\s*\(([-+]?\d*\.\d+|\d+),\s*([-+]?\d*\.\d+|\d+)\)/);
+          if (match) {
+            coords.push([parseFloat(match[1]), parseFloat(match[2])]);
+          }
+        }
+      });
+
+      if (coords.length >= 2) {
+        setRouteLoading(true);
+        try {
+          const routeData = await mapApi.getMultiStopRoute(coords);
+          setRouteDirections(routeData);
+        } catch (err) {
+          console.error('Failed to fetch OSRM route directions:', err);
+          setRouteDirections(null);
+        } finally {
+          setRouteLoading(false);
+        }
+      } else {
+        setRouteDirections(null);
+      }
+    };
+    fetchRoute();
+  }, [activeTrip.itinerary]);
+
+  const formatDuration = (seconds) => {
+    const hrs = Math.floor(seconds / 3600);
+    const mins = Math.round((seconds % 3600) / 60);
+    if (hrs > 0) {
+      return `${hrs} hr ${mins} min`;
+    }
+    return `${mins} min`;
+  };
+
+  const boundsCoords = (activeTrip.itinerary || [])
+    .map(item => {
+      if (item.desc && item.desc.includes('GPS:')) {
+        const match = item.desc.match(/GPS:\s*\(([-+]?\d*\.\d+|\d+),\s*([-+]?\d*\.\d+|\d+)\)/);
+        if (match) {
+          return { lat: parseFloat(match[1]), lng: parseFloat(match[2]) };
+        }
+      }
+      return null;
+    })
+    .filter(Boolean);
 
   const { totalBudget, totalSpent, remaining, percentSpent } = calculateBudgetSummary(
     activeTrip.budget,
@@ -422,6 +477,7 @@ export const TripDetails = () => {
             center={mapCenter} 
             zoom={12}
             onMapClick={handleMapClick}
+            boundsCoords={boundsCoords}
           >
             {/* Visual Route Points */}
             {(activeTrip.itinerary || []).map((item, index) => {
@@ -446,7 +502,19 @@ export const TripDetails = () => {
               );
             })}
 
-            <RouteLayer points={activeTrip.itinerary || []} />
+            {/* OSRM Route Layer or Fallback RouteLayer */}
+            {routeDirections && routeDirections.geometry ? (
+              <Polyline
+                positions={routeDirections.geometry.coordinates.map(coord => [coord[1], coord[0]])}
+                pathOptions={{
+                  color: 'hsl(var(--secondary))',
+                  weight: 4,
+                  opacity: 0.85
+                }}
+              />
+            ) : (
+              <RouteLayer points={activeTrip.itinerary || []} />
+            )}
 
             {(!activeTrip.itinerary || activeTrip.itinerary.length === 0) && (
               <div style={{ color: 'hsl(var(--text-muted))', textAlign: 'center' }}>
@@ -454,6 +522,33 @@ export const TripDetails = () => {
               </div>
             )}
           </MapView>
+
+          {/* OSRM Driving Distance & Duration Panel */}
+          {routeDirections && (
+            <div className="glass-panel" style={{
+              display: 'flex',
+              justifyContent: 'space-around',
+              padding: '0.75rem 1rem',
+              background: 'rgba(255, 255, 255, 0.02)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '8px',
+              fontSize: '0.82rem'
+            }}>
+              <div>
+                <span style={{ color: 'hsl(var(--text-secondary))' }}>🚗 Distance: </span>
+                <strong style={{ color: 'white', fontWeight: 700 }}>
+                  {(routeDirections.distance / 1000).toFixed(1)} km
+                </strong>
+              </div>
+              <div style={{ borderLeft: '1px solid var(--border-color)', height: '1.2rem' }} />
+              <div>
+                <span style={{ color: 'hsl(var(--text-secondary))' }}>⏱️ Est. Driving Time: </span>
+                <strong style={{ color: 'white', fontWeight: 700 }}>
+                  {formatDuration(routeDirections.duration)}
+                </strong>
+              </div>
+            </div>
+          )}
 
           <div style={{ fontSize: '0.85rem', color: 'hsl(var(--text-secondary))', textAlign: 'center' }}>
             🌍 Coordinates locked in: <span style={{ color: 'white', fontWeight: 600 }}>{activeTrip.destination || 'Destination'} center</span>
