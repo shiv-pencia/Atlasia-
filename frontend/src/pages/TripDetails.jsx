@@ -50,6 +50,9 @@ export const TripDetails = () => {
   const [weather, setWeather] = useState(null);
   const [weatherLoading, setWeatherLoading] = useState(false);
 
+  // Map state
+  const [mapCenter, setMapCenter] = useState({ lat: 35.0116, lng: 135.7681 });
+
   useEffect(() => {
     fetchTripDetails(id);
   }, [id, fetchTripDetails]);
@@ -99,8 +102,11 @@ export const TripDetails = () => {
     saveNotes();
   }, [debouncedNotes, id, selectedTrip, updateTrip]);
 
-  // Fetch weather when destination is loaded
+  // Fetch weather and geocode/center map when destination or itinerary changes
   useEffect(() => {
+    if (!activeTrip) return;
+
+    // 1. Fetch Weather
     const fetchWeather = async () => {
       const dest = activeTrip.destination || activeTrip.destinations?.[0];
       if (!dest) return;
@@ -115,7 +121,34 @@ export const TripDetails = () => {
       }
     };
     fetchWeather();
-  }, [activeTrip.destination, activeTrip.destinations]);
+
+    // 2. Align Map Center
+    // Prioritize first itinerary item with real coordinates
+    const gpsItems = (activeTrip.itinerary || []).filter(item => item.desc && item.desc.includes('GPS:'));
+    if (gpsItems.length > 0) {
+      const match = gpsItems[0].desc.match(/GPS:\s*\(([-+]?\d*\.\d+|\d+),\s*([-+]?\d*\.\d+|\d+)\)/);
+      if (match) {
+        setMapCenter({ lat: parseFloat(match[1]), lng: parseFloat(match[2]) });
+        return;
+      }
+    }
+
+    // Fall back to geocoding the overall destination
+    const dest = activeTrip.destination || activeTrip.destinations?.[0];
+    if (!dest) return;
+
+    const geocodeDest = async () => {
+      try {
+        const searchResults = await mapApi.searchPlaces(dest);
+        if (searchResults && searchResults.length > 0) {
+          setMapCenter(searchResults[0].coordinates);
+        }
+      } catch (err) {
+        console.error('Failed to geocode destination for map center', err);
+      }
+    };
+    geocodeDest();
+  }, [activeTrip.destination, activeTrip.itinerary]);
 
   const { totalBudget, totalSpent, remaining, percentSpent } = calculateBudgetSummary(
     activeTrip.budget,
@@ -173,14 +206,22 @@ export const TripDetails = () => {
   };
 
   const handleSelectPlace = async (place) => {
+    let desc = place.description || 'Exploration point';
+    if (place.coordinates) {
+      desc = `${desc} | GPS: (${place.coordinates.lat.toFixed(6)}, ${place.coordinates.lng.toFixed(6)})`;
+    }
+
     const newItem = {
       time: 'TBA',
-      title: `Visit ${place.name}`,
-      desc: place.description || 'Exploration point',
+      title: `Visit ${place.name.split(',')[0]}`,
+      desc: desc,
       loc: place.name
     };
     try {
       await addItineraryItem(activeTrip.id, newItem);
+      if (place.coordinates) {
+        setMapCenter(place.coordinates);
+      }
     } catch (err) {
       alert(err.message || 'Failed to pin location');
     }
@@ -378,7 +419,7 @@ export const TripDetails = () => {
 
           {/* Interactive map view component */}
           <MapView 
-            center={{ lat: 35.0116, lng: 135.7681 }} 
+            center={mapCenter} 
             zoom={12}
             onMapClick={handleMapClick}
           >
