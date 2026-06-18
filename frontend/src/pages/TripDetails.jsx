@@ -186,6 +186,23 @@ export const TripDetails = () => {
     }
   };
 
+  const handleMapClick = async (latlng) => {
+    const title = prompt("Enter a name or activity for this location:");
+    if (!title || !title.trim()) return;
+
+    const newItem = {
+      time: 'TBA',
+      title: title.trim(),
+      desc: `GPS: (${latlng.lat.toFixed(6)}, ${latlng.lng.toFixed(6)})`,
+      loc: title.trim()
+    };
+    try {
+      await addItineraryItem(activeTrip.id, newItem);
+    } catch (err) {
+      alert(err.message || 'Failed to pin location');
+    }
+  };
+
   const handleSendChatMessage = async (e) => {
     e.preventDefault();
     if (!chatInput.trim() || chatLoading) return;
@@ -363,22 +380,36 @@ export const TripDetails = () => {
           <MapView 
             center={{ lat: 35.0116, lng: 135.7681 }} 
             zoom={12}
+            onMapClick={handleMapClick}
           >
             {/* Visual Route Points */}
-            {(activeTrip.itinerary || []).slice(0, 3).map((item, index) => (
-              <Marker
-                key={item.id || index}
-                index={index + 1}
-                title={item.title}
-                position={{ lat: 35.0116 - index * 0.05, lng: 135.7681 + index * 0.05 }}
-              />
-            ))}
+            {(activeTrip.itinerary || []).map((item, index) => {
+              let lat = 35.0116 - index * 0.05;
+              let lng = 135.7681 + index * 0.05;
+
+              if (item.desc && item.desc.includes('GPS:')) {
+                const match = item.desc.match(/GPS:\s*\(([-+]?\d*\.\d+|\d+),\s*([-+]?\d*\.\d+|\d+)\)/);
+                if (match) {
+                  lat = parseFloat(match[1]);
+                  lng = parseFloat(match[2]);
+                }
+              }
+
+              return (
+                <Marker
+                  key={item.id || index}
+                  index={index + 1}
+                  title={item.title}
+                  position={{ lat, lng }}
+                />
+              );
+            })}
 
             <RouteLayer points={activeTrip.itinerary || []} />
 
             {(!activeTrip.itinerary || activeTrip.itinerary.length === 0) && (
               <div style={{ color: 'hsl(var(--text-muted))', textAlign: 'center' }}>
-                📍 Search and pin a location to begin routing
+                📍 Click on the map or search to pin locations
               </div>
             )}
           </MapView>

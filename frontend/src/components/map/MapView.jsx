@@ -1,7 +1,19 @@
 import React from 'react';
-import { MapContainer, TileLayer } from 'react-leaflet';
+import { MapContainer, TileLayer, useMapEvents } from 'react-leaflet';
 
-export const MapView = ({ center, zoom = 12, children, style = {} }) => {
+// Internal helper component to hook Leaflet map events
+const MapEvents = ({ onClick }) => {
+  useMapEvents({
+    click(e) {
+      if (onClick) {
+        onClick(e.latlng);
+      }
+    }
+  });
+  return null;
+};
+
+export const MapView = ({ center, zoom = 12, children, style = {}, onMapClick }) => {
   // Convert center object { lat, lng } to array [lat, lng] for Leaflet
   const mapCenter = center ? [center.lat, center.lng] : [35.0116, 135.7681];
 
@@ -40,6 +52,7 @@ export const MapView = ({ center, zoom = 12, children, style = {} }) => {
           attribution='&copy; <a href="https://carto.com/attributions">CARTO</a>'
           url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
         />
+        <MapEvents onClick={onMapClick} />
         {leafletElements}
       </MapContainer>
 

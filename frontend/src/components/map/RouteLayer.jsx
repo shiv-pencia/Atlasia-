@@ -4,11 +4,20 @@ import { Polyline } from 'react-leaflet';
 export const RouteLayer = ({ points = [] }) => {
   if (points.length < 2) return null;
 
-  // Map the itinerary items to mock coordinates centered around Kyoto coordinates
-  const positions = points.slice(0, 3).map((item, index) => [
-    35.0116 - index * 0.05,
-    135.7681 + index * 0.05
-  ]);
+  // Resolve polyline path using either parsed GPS coordinates or fallback mock coordinates
+  const positions = points.map((item, index) => {
+    let lat = 35.0116 - index * 0.05;
+    let lng = 135.7681 + index * 0.05;
+
+    if (item.desc && item.desc.includes('GPS:')) {
+      const match = item.desc.match(/GPS:\s*\(([-+]?\d*\.\d+|\d+),\s*([-+]?\d*\.\d+|\d+)\)/);
+      if (match) {
+        lat = parseFloat(match[1]);
+        lng = parseFloat(match[2]);
+      }
+    }
+    return [lat, lng];
+  });
 
   return (
     <Polyline
