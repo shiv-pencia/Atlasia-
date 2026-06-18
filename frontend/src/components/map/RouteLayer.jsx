@@ -1,37 +1,26 @@
 import React from 'react';
+import { Polyline } from 'react-leaflet';
 
 export const RouteLayer = ({ points = [] }) => {
   if (points.length < 2) return null;
 
+  // Map the itinerary items to mock coordinates centered around Kyoto coordinates
+  const positions = points.slice(0, 3).map((item, index) => [
+    35.0116 - index * 0.05,
+    135.7681 + index * 0.05
+  ]);
+
   return (
-    <div style={{
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      width: '100%',
-      height: '100%',
-      pointerEvents: 'none',
-      zIndex: 1
-    }}>
-      {/* Visual route indicator */}
-      <div style={{
-        position: 'absolute',
-        top: '50%',
-        left: '50%',
-        transform: 'translate(-50%, -50%)',
-        border: '1px dashed hsla(var(--secondary), 0.3)',
-        borderRadius: '50%',
-        width: '80%',
-        height: '80%',
-        animation: 'spin 120s linear infinite'
-      }} />
-      
-      <style>{`
-        @keyframes spin {
-          100% { transform: translate(-50%, -50%) rotate(360deg); }
-        }
-      `}</style>
-    </div>
+    <Polyline
+      positions={positions}
+      pathOptions={{
+        color: 'hsl(190, 95%, 50%)', // Vibrant Cyan theme
+        weight: 3,
+        dashArray: '6, 6',
+        lineCap: 'round',
+        lineJoin: 'round'
+      }}
+    />
   );
 };
 

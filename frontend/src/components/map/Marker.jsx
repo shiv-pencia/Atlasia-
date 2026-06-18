@@ -1,32 +1,47 @@
 import React from 'react';
+import { Marker as LeafletMarker, Popup } from 'react-leaflet';
+import L from 'leaflet';
 
 export const Marker = ({ position, title, index }) => {
+  if (!position) return null;
+
+  // Create a custom Leaflet divIcon that renders the circular index badge
+  const customIcon = L.divIcon({
+    className: 'custom-leaflet-marker',
+    html: `
+      <div style="
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, hsl(190, 95%, 50%) 0%, hsl(247, 85%, 60%) 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: 'Plus Jakarta Sans', sans-serif;
+        font-size: 0.8rem;
+        font-weight: bold;
+        color: white;
+        box-shadow: 0 0 10px rgba(0, 242, 254, 0.6);
+        border: 2px solid white;
+        text-align: center;
+        line-height: 24px;
+      ">
+        ${index}
+      </div>
+    `,
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
+  });
+
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-      <div style={{
-        width: '24px',
-        height: '24px',
-        borderRadius: '50%',
-        background: 'linear-gradient(135deg, hsl(var(--secondary)) 0%, hsl(var(--primary)) 100%)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontSize: '0.8rem',
-        fontWeight: 'bold',
-        color: 'white',
-        boxShadow: '0 0 10px hsla(var(--secondary), 0.5)'
-      }}>
-        {index}
-      </div>
-      <div className="glass-panel" style={{ padding: '0.5rem 1rem', borderRadius: '8px', fontSize: '0.85rem' }}>
-        <span style={{ fontWeight: 600 }}>{title}</span>
-        {position && (
-          <span style={{ fontSize: '0.7rem', color: 'hsl(var(--text-muted))', marginLeft: '0.5rem' }}>
-            ({position.lat?.toFixed(2)}, {position.lng?.toFixed(2)})
-          </span>
-        )}
-      </div>
-    </div>
+    <LeafletMarker position={[position.lat, position.lng]} icon={customIcon}>
+      <Popup>
+        <div style={{ color: '#111', fontSize: '0.8rem', padding: '0.2rem', fontFamily: 'system-ui' }}>
+          <strong style={{ display: 'block', marginBottom: '0.1rem' }}>Activity {index}</strong>
+          <span>{title}</span>
+        </div>
+      </Popup>
+    </LeafletMarker>
   );
 };
 
