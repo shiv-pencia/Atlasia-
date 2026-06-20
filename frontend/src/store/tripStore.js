@@ -1,12 +1,13 @@
 import { create } from 'zustand';
-import { tripApi } from '../../api/tripApi';
-import { aiApi } from '../../api/aiApi';
+import { tripApi } from '../api/tripApi';
+import { aiApi } from '../api/aiApi';
 
 export const useTripStore = create((set, get) => ({
   trips: [],
   selectedTrip: null,
   isLoading: false,
   error: null,
+  invitations: [],
 
   fetchTrips: async () => {
     set({ isLoading: true, error: null });
@@ -96,22 +97,6 @@ export const useTripStore = create((set, get) => ({
     }
   },
 
-  generateAiItinerary: async (tripId) => {
-    set({ isLoading: true, error: null });
-    try {
-      const updated = await aiApi.generateItinerary(tripId);
-      set((state) => ({
-        trips: state.trips.map((t) => (t.id === tripId ? updated : t)),
-        selectedTrip: state.selectedTrip?.id === tripId ? updated : state.selectedTrip,
-        isLoading: false
-      }));
-      return updated;
-    } catch (err) {
-      set({ error: err.message || 'Failed to generate AI itinerary', isLoading: false });
-      throw err;
-    }
-  },
-
   addItineraryItem: async (tripId, itemData) => {
     try {
       const updatedItinerary = await tripApi.addItineraryItem(tripId, itemData);
@@ -168,6 +153,40 @@ export const useTripStore = create((set, get) => ({
       });
     } catch (err) {
       set({ error: err.message || 'Failed to delete expense' });
+      throw err;
+    }
+  },
+
+  fetchInvitations: async () => {
+    try {
+      const data = await tripApi.getInvitations();
+      set({ invitations: data });
+    } catch (err) {
+      set({ error: err.message || 'Failed to fetch invitations' });
+    }
+  },
+
+  respondToInvitation: async (invitationId, status) => {
+    try {
+      await tripApi.respondToInvitation(invitationId, status);
+      await get().fetchTrips();
+      await get().fetchInvitations();
+    } catch (err) {
+      set({ error: err.message || 'Failed to respond to invitation' });
+      throw err;
+    }
+  },
+
+  inviteUser: async (tripId, email) => {
+    try {
+      const updatedTrip = await tripApi.inviteUser(tripId, email);
+      set((state) => ({
+        selectedTrip: state.selectedTrip?.id === tripId ? updatedTrip : state.selectedTrip,
+        trips: state.trips.map(t => t.id === tripId ? updatedTrip : t)
+      }));
+      return updatedTrip;
+    } catch (err) {
+      set({ error: err.message || 'Failed to invite user' });
       throw err;
     }
   }

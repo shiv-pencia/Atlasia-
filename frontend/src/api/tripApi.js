@@ -41,5 +41,20 @@ export const tripApi = {
   deleteExpense: async (tripId, expenseId) => {
     const response = await axiosInstance.delete(`/trips/${tripId}/expenses/${expenseId}`);
     return response.data;
+  },
+
+  getInvitations: async () => {
+    const response = await axiosInstance.get('/trips/invitations');
+    return response.data;
+  },
+
+  respondToInvitation: async (invitationId, status) => {
+    const response = await axiosInstance.post(`/trips/invitations/${invitationId}/respond`, { status });
+    return response.data;
+  },
+
+  inviteUser: async (tripId, email) => {
+    const response = await axiosInstance.post(`/trips/${tripId}/invite`, { email });
+    return response.data;
   }
 };

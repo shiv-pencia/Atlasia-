@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ROUTES } from '../constants/routes';
 import { useAuth } from '../hooks/useAuth';
+import TravelVibeAnimation from '../components/TravelVibeAnimation';
 
 // Shared UI Components
 import Button from '../components/ui/Button';
@@ -95,6 +96,11 @@ export const Home = () => {
         }}>
           Create collaborative itineraries, map out your routes in real time, and manage budgets seamlessly. All in one unified canvas.
         </p>
+
+        {/* Travel Vibe Animation Banner */}
+        <div style={{ width: '100%', maxWidth: '650px', margin: '1rem 0' }}>
+          <TravelVibeAnimation />
+        </div>
 
         {/* Search Destination Bar */}
         <form onSubmit={handleSearch} style={{

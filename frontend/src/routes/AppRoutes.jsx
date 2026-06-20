@@ -15,27 +15,36 @@ import Dashboard from '../pages/Dashboard';
 import TripDetails from '../pages/TripDetails';
 import NotFound from '../pages/NotFound';
 
+// Real-time hooks & UI
+import { useSocketEvents } from '../hooks/useSocketEvents';
+import ToastContainer from '../components/ui/ToastContainer';
+
 export const AppRoutes = () => {
+  useSocketEvents();
+
   return (
-    <Routes>
-      {/* Public Routes */}
-      <Route element={<MainLayout />}>
-        <Route path={ROUTES.HOME} element={<Home />} />
-        <Route path={ROUTES.LOGIN} element={<Login />} />
-        <Route path={ROUTES.REGISTER} element={<Register />} />
-      </Route>
+    <>
+      <Routes>
+        {/* Public Routes */}
+        <Route element={<MainLayout />}>
+          <Route path={ROUTES.HOME} element={<Home />} />
+          <Route path={ROUTES.LOGIN} element={<Login />} />
+          <Route path={ROUTES.REGISTER} element={<Register />} />
+        </Route>
 
-      {/* Private Workspace Routes */}
-      <Route path="/" element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
-        <Route path={ROUTES.DASHBOARD} element={<Dashboard />} />
-        <Route path={ROUTES.TRIP_DETAILS} element={<TripDetails />} />
-      </Route>
+        {/* Private Workspace Routes */}
+        <Route path="/" element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
+          <Route path={ROUTES.DASHBOARD} element={<Dashboard />} />
+          <Route path={ROUTES.TRIP_DETAILS} element={<TripDetails />} />
+        </Route>
 
-      {/* Fallback 404 Route */}
-      <Route element={<MainLayout />}>
-        <Route path={ROUTES.NOT_FOUND} element={<NotFound />} />
-      </Route>
-    </Routes>
+        {/* Fallback 404 Route */}
+        <Route element={<MainLayout />}>
+          <Route path={ROUTES.NOT_FOUND} element={<NotFound />} />
+        </Route>
+      </Routes>
+      <ToastContainer />
+    </>
   );
 };
 

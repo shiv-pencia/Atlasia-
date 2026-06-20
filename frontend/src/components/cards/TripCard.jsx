@@ -66,7 +66,7 @@ export const TripCard = ({ trip, onClick, onDelete, onToggleFavorite }) => {
           fontWeight: 600,
           backdropFilter: 'blur(4px)'
         }}>
-          📍 {trip.destination || trip.destinations?.[0] || 'Unknown'}
+          📍 {trip.source ? `${trip.source} ➔ ` : ''}{trip.destination || trip.destinations?.[0] || 'Unknown'}
         </div>
       </div>
 

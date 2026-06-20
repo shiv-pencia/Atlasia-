@@ -9,7 +9,6 @@ router.post("/generate", createTripPlan);
 // Protect other generative AI helper endpoints
 router.use(protect);
 
-router.post('/generate-itinerary', aiController.generateItinerary);
 router.post('/chat', aiController.chat);
 
 export default router;

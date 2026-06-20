@@ -1,10 +1,13 @@
 import { ApiError } from '../utils/ApiError.js';
 import { MESSAGES } from '../constants/messages.js';
 import { Trip } from '../models/Trip.js';
+import { User } from '../models/User.js';
 
 export const tripService = {
   getTripsByUserId: async (userId) => {
-    return await Trip.find({ userId }).sort({ createdAt: -1 });
+    return await Trip.find({
+      $or: [{ userId }, { members: userId }]
+    }).populate('userId', 'name email').populate('members', 'name email').sort({ createdAt: -1 });
   },
 
   getTripById: async (tripId, userId) => {
@@ -12,10 +15,14 @@ export const tripService = {
     if (!trip) {
       throw new ApiError(404, MESSAGES.TRIP.NOT_FOUND);
     }
-    if (trip.userId.toString() !== userId) {
+    const isOwner = trip.userId.toString() === userId;
+    const isMember = (trip.members || []).some(m => m.toString() === userId);
+    if (!isOwner && !isMember) {
       throw new ApiError(403, MESSAGES.TRIP.FORBIDDEN);
     }
-    return trip;
+    return await Trip.findById(tripId)
+      .populate('userId', 'name email')
+      .populate('members', 'name email');
   },
 
   createTrip: async (tripData, userId) => {
@@ -104,6 +111,92 @@ export const tripService = {
     
     console.log(`✕ [Trip] Deleted expense ID: ${expenseId} from Trip ID: ${tripId} (User: ${userId})`);
     return { success: true };
+  },
+
+  inviteUser: async (tripId, email, ownerId) => {
+    const trip = await Trip.findById(tripId);
+    if (!trip) {
+      throw new ApiError(404, MESSAGES.TRIP.NOT_FOUND);
+    }
+    if (trip.userId.toString() !== ownerId) {
+      throw new ApiError(403, 'Only the trip owner can invite members');
+    }
+    
+    const targetEmail = email.trim().toLowerCase();
+    const targetUser = await User.findOne({ email: targetEmail });
+    if (!targetUser) {
+      throw new ApiError(404, 'User with this email is not registered yet');
+    }
+
+    if (trip.userId.toString() === targetUser._id.toString()) {
+      throw new ApiError(400, 'You are the owner of this trip');
+    }
+
+    const alreadyMember = (trip.members || []).some(m => m.toString() === targetUser._id.toString());
+    if (alreadyMember) {
+      throw new ApiError(400, 'User is already a member of this trip');
+    }
+
+    const alreadyInvited = (trip.invitations || []).some(inv => inv.email === targetEmail && inv.status === 'pending');
+    if (alreadyInvited) {
+      throw new ApiError(400, 'Invitation is already pending for this user');
+    }
+
+    trip.invitations.push({ email: targetEmail, status: 'pending' });
+    await trip.save();
+
+    const updatedTrip = await Trip.findById(tripId)
+      .populate('userId', 'name email')
+      .populate('members', 'name email');
+
+    return { trip: updatedTrip, targetUserId: targetUser._id };
+  },
+
+  getInvitations: async (email) => {
+    const targetEmail = email.trim().toLowerCase();
+    return await Trip.find({
+      'invitations': {
+        $elemMatch: { email: targetEmail, status: 'pending' }
+      }
+    }).populate('userId', 'name email');
+  },
+
+  respondToInvitation: async (invitationId, status, userId, email) => {
+    const targetEmail = email.trim().toLowerCase();
+    if (!['accepted', 'declined'].includes(status)) {
+      throw new ApiError(400, 'Invalid status response');
+    }
+
+    const trip = await Trip.findOne({ 'invitations._id': invitationId });
+    if (!trip) {
+      throw new ApiError(404, 'Invitation not found');
+    }
+
+    const invitation = trip.invitations.id(invitationId);
+    if (!invitation) {
+      throw new ApiError(404, 'Invitation not found');
+    }
+
+    if (invitation.email !== targetEmail) {
+      throw new ApiError(403, 'This invitation was sent to a different email address');
+    }
+
+    if (invitation.status !== 'pending') {
+      throw new ApiError(400, 'This invitation has already been processed');
+    }
+
+    invitation.status = status;
+
+    if (status === 'accepted') {
+      if (!trip.members.some(m => m.toString() === userId.toString())) {
+        trip.members.push(userId);
+      }
+    }
+
+    await trip.save();
+    return await Trip.findById(trip._id)
+      .populate('userId', 'name email')
+      .populate('members', 'name email');
   }
 };
 

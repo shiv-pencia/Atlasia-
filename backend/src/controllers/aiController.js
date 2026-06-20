@@ -22,31 +22,6 @@ export async function createTripPlan(req, res) {
 
 // Keep compatibility with existing endpoints
 export const aiController = {
-  generateItinerary: async (req, res, next) => {
-    try {
-      const { tripId } = req.body;
-      if (!tripId) {
-        return res.status(400).json({ message: 'tripId parameter is required' });
-      }
-
-      const trip = await tripService.getTripById(tripId, req.user.id);
-      const itinerary = await geminiService.generateItinerary(
-        trip.destination,
-        trip.startDate,
-        trip.endDate,
-        trip.budget
-      );
-
-      trip.itinerary = itinerary;
-      await trip.save();
-
-      console.log(`✨ [AI] Generated itinerary for trip: "${trip.title}"`);
-      res.status(200).json(trip);
-    } catch (error) {
-      next(error);
-    }
-  },
-
   chat: async (req, res, next) => {
     try {
       const { tripId, message, history } = req.body;

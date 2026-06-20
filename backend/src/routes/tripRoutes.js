@@ -10,7 +10,10 @@ const router = Router();
 router.use(protect);
 
 router.get('/', tripController.getAllTrips);
+router.get('/invitations', tripController.getInvitations);
+router.post('/invitations/:invitationId/respond', tripController.respondToInvitation);
 router.get('/:id', tripController.getTripById);
+router.post('/:id/invite', tripController.inviteUser);
 router.post('/', validate(tripValidator.create), tripController.createTrip);
 router.put('/:id', validate(tripValidator.update), tripController.updateTrip);
 router.delete('/:id', tripController.deleteTrip);

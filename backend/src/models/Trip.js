@@ -14,6 +14,10 @@ const itinerarySchema = new mongoose.Schema({
   },
   loc: {
     type: String
+  },
+  isAiSuggested: {
+    type: Boolean,
+    default: false
   }
 });
 
@@ -38,6 +42,10 @@ const expenseSchema = new mongoose.Schema({
   category: {
     type: String,
     default: 'Other'
+  },
+  spentBy: {
+    type: String,
+    default: 'Me'
   }
 });
 
@@ -112,6 +120,27 @@ const tripSchema = new mongoose.Schema(
     },
     itinerary: [itinerarySchema],
     expenses: [expenseSchema],
+    members: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+      }
+    ],
+    invitations: [
+      {
+        email: {
+          type: String,
+          required: true,
+          trim: true,
+          lowercase: true
+        },
+        status: {
+          type: String,
+          enum: ['pending', 'accepted', 'declined'],
+          default: 'pending'
+        }
+      }
+    ],
     coverUrl: {
       type: String,
       default: ''

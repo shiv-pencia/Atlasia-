@@ -1,15 +1,6 @@
 import axiosInstance from '../services/axios';
 
 export const aiApi = {
-  /**
-   * Triggers the backend Gemini AI itinerary generator for a trip
-   * @param {string} tripId - Target trip ID
-   * @returns {Promise<Object>} - The updated trip object
-   */
-  generateItinerary: async (tripId) => {
-    const response = await axiosInstance.post('/ai/generate-itinerary', { tripId });
-    return response.data;
-  },
 
   /**
    * Sends a user query to the backend Gemini AI travel copilot chat
