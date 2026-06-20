@@ -11,7 +11,17 @@ export const useSocketEvents = () => {
 
   useEffect(() => {
     if (isAuthenticated && user && user.id) {
-      const socket = connectSocket(user.id);
+      const socket = connectSocket(user.id, user.name);
+
+      const handleConnect = () => {
+        console.log('🔌 Socket connected, registering user...');
+        socket.emit('register', { userId: user.id, name: user.name });
+      };
+
+      socket.on('connect', handleConnect);
+      if (socket.connected) {
+        handleConnect();
+      }
 
       // Initial fetch of existing invitations & trips
       fetchInvitations();
@@ -52,6 +62,7 @@ export const useSocketEvents = () => {
       });
 
       return () => {
+        socket.off('connect', handleConnect);
         socket.off('invitation_received');
         socket.off('notification_received');
         socket.off('trip_updated');

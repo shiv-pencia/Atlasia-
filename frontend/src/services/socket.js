@@ -17,14 +17,14 @@ export const getSocket = () => {
   return socket;
 };
 
-export const connectSocket = (userId) => {
+export const connectSocket = (userId, name) => {
   const s = getSocket();
   if (!s.connected) {
     s.connect();
-    s.emit('register', userId);
-    console.log(`🔌 Connecting socket for user: ${userId}`);
+    s.emit('register', { userId, name });
+    console.log(`🔌 Connecting socket for user: ${userId} (${name})`);
   } else {
-    s.emit('register', userId);
+    s.emit('register', { userId, name });
   }
   return s;
 };

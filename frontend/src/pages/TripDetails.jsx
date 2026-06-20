@@ -63,21 +63,216 @@ export const TripDetails = () => {
   const [weather, setWeather] = useState(null);
   const [weatherLoading, setWeatherLoading] = useState(false);
 
+  // Live Location states
+  const [isSharingLocation, setIsSharingLocation] = useState(false);
+  const [isSimulating, setIsSimulating] = useState(false);
+  const [liveLocations, setLiveLocations] = useState({});
+  const geoWatchIdRef = React.useRef(null);
+  const simIntervalRef = React.useRef(null);
 
+  // Helper mapping common destination keywords to coordinates
+  const getDestinationCoords = (dest) => {
+    const d = dest?.toLowerCase() || '';
+    if (d.includes('kyoto')) return { lat: 35.0116, lng: 135.7681 };
+    if (d.includes('tokyo')) return { lat: 35.6762, lng: 139.6503 };
+    if (d.includes('paris')) return { lat: 48.8566, lng: 2.3522 };
+    if (d.includes('delhi')) return { lat: 28.6139, lng: 77.2090 };
+    if (d.includes('mumbai')) return { lat: 19.0760, lng: 72.8777 };
+    if (d.includes('bangalore') || d.includes('bengaluru')) return { lat: 12.9716, lng: 77.5946 };
+    if (d.includes('goa')) return { lat: 15.2993, lng: 74.1240 };
+    return { lat: 28.6139, lng: 77.2090 }; // Default fallback Delhi coordinates
+  };
+
+  // Start geolocation tracking
+  const startSharing = () => {
+    if (!navigator.geolocation) {
+      alert('Geolocation is not supported by your browser.');
+      return;
+    }
+
+    setIsSharingLocation(true);
+    setIsSimulating(false);
+
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+        const socketInstance = getSocket();
+        if (socketInstance) {
+          socketInstance.emit('update_location', {
+            tripId: id,
+            latitude,
+            longitude
+          });
+        }
+      },
+      (error) => {
+        console.error('🔴 Geolocation error:', error);
+        // Only stop sharing if permission is denied, as other errors (like timeout) are transient
+        if (error.code === error.PERMISSION_DENIED) {
+          const msg = 'Location permission was denied. Please allow location access in your browser settings.';
+          alert(msg);
+          stopSharing();
+        } else {
+          console.warn('⚠️ Transient geolocation error:', error.message || error);
+        }
+      },
+      {
+        enableHighAccuracy: true,
+        maximumAge: 10000,
+        timeout: 15000
+      }
+    );
+
+    geoWatchIdRef.current = watchId;
+  };
+
+  // Unified stop sharing for both real GPS and simulator
+  const stopSharing = () => {
+    if (navigator.geolocation && geoWatchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(geoWatchIdRef.current);
+      geoWatchIdRef.current = null;
+    }
+    if (simIntervalRef.current !== null) {
+      clearInterval(simIntervalRef.current);
+      simIntervalRef.current = null;
+    }
+    setIsSharingLocation(false);
+    setIsSimulating(false);
+
+    const socketInstance = getSocket();
+    if (socketInstance) {
+      socketInstance.emit('stop_location', { tripId: id });
+    }
+  };
+
+  // Start location simulator (fallback for HTTP connections)
+  const startSimulation = () => {
+    setIsSharingLocation(true);
+    setIsSimulating(true);
+
+    const destCoords = getDestinationCoords(activeTrip.destination);
+    let currentLat = destCoords.lat;
+    let currentLng = destCoords.lng;
+
+    const socketInstance = getSocket();
+    if (socketInstance) {
+      socketInstance.emit('update_location', {
+        tripId: id,
+        latitude: currentLat,
+        longitude: currentLng
+      });
+    }
+
+    const intervalId = setInterval(() => {
+      // Small random shifts to simulate movement
+      currentLat += (Math.random() - 0.5) * 0.0003;
+      currentLng += (Math.random() - 0.5) * 0.0003;
+
+      if (socketInstance) {
+        socketInstance.emit('update_location', {
+          tripId: id,
+          latitude: currentLat,
+          longitude: currentLng
+        });
+      }
+    }, 4000);
+
+    simIntervalRef.current = intervalId;
+  };
+
+  // Listen to socket location events & handle reconnection sync
+  useEffect(() => {
+    const socketInstance = getSocket();
+    if (!socketInstance || !id) return;
+
+    const handleConnect = () => {
+      console.log(`🔌 Socket connected/reconnected, joining trip: ${id}`);
+      socketInstance.emit('join_trip', id);
+      socketInstance.emit('request_locations', id);
+      
+      // If we were sharing location (either GPS or Simulation), force an immediate coordinate re-emit
+      // so the server re-registers our location after a connection drop
+      if (isSharingLocation && !isSimulating) {
+        if (navigator.geolocation) {
+          navigator.geolocation.getCurrentPosition(
+            (pos) => {
+              socketInstance.emit('update_location', {
+                tripId: id,
+                latitude: pos.coords.latitude,
+                longitude: pos.coords.longitude
+              });
+            },
+            null,
+            { enableHighAccuracy: true, timeout: 5000 }
+          );
+        }
+      }
+    };
+
+    socketInstance.on('connect', handleConnect);
+    if (socketInstance.connected) {
+      handleConnect();
+    }
+
+    const handleInitialLocations = (locationsArray) => {
+      const locs = {};
+      locationsArray.forEach(loc => {
+        if (loc.userId !== user?.id) {
+          locs[loc.userId] = loc;
+        }
+      });
+      setLiveLocations(locs);
+    };
+
+    const handleLocationUpdated = (data) => {
+      if (data.userId !== user?.id) {
+        setLiveLocations(prev => ({
+          ...prev,
+          [data.userId]: data
+        }));
+      }
+    };
+
+    const handleLocationStopped = (data) => {
+      setLiveLocations(prev => {
+        const next = { ...prev };
+        delete next[data.userId];
+        return next;
+      });
+    };
+
+    socketInstance.on('initial_locations', handleInitialLocations);
+    socketInstance.on('location_updated', handleLocationUpdated);
+    socketInstance.on('location_stopped', handleLocationStopped);
+
+    return () => {
+      socketInstance.off('connect', handleConnect);
+      socketInstance.off('initial_locations', handleInitialLocations);
+      socketInstance.off('location_updated', handleLocationUpdated);
+      socketInstance.off('location_stopped', handleLocationStopped);
+      socketInstance.emit('leave_trip', id);
+    };
+  }, [id, user?.id, isSharingLocation, isSimulating]);
+
+  // Clean up sharing state on unmount
+  useEffect(() => {
+    return () => {
+      if (navigator.geolocation && geoWatchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(geoWatchIdRef.current);
+      }
+      if (simIntervalRef.current !== null) {
+        clearInterval(simIntervalRef.current);
+      }
+      const socketInstance = getSocket();
+      if (socketInstance) {
+        socketInstance.emit('stop_location', { tripId: id });
+      }
+    };
+  }, [id]);
 
   useEffect(() => {
     fetchTripDetails(id);
   }, [id, fetchTripDetails]);
-
-  useEffect(() => {
-    const socket = getSocket();
-    if (socket && id) {
-      socket.emit('join_trip', id);
-      return () => {
-        socket.emit('leave_trip', id);
-      };
-    }
-  }, [id]);
 
   // Fallback to empty structure if no trip selected in store yet
   const activeTrip = selectedTrip?.id === id ? selectedTrip : {
@@ -649,6 +844,191 @@ export const TripDetails = () => {
             <span style={{ fontSize: '0.85rem' }}>Only the trip owner can invite other travelers.</span>
           </div>
         )}
+
+        {/* Live Location Sharing Widget */}
+        <div className="glass-panel" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+          <h3 style={{ fontSize: '1rem', fontWeight: 700, margin: 0, color: 'white', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            📍 Live Locations
+          </h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            {!navigator.geolocation && (
+              <div style={{
+                fontSize: '0.75rem',
+                color: 'hsl(38, 92%, 60%)',
+                background: 'rgba(255, 152, 0, 0.08)',
+                padding: '0.6rem 0.8rem',
+                borderRadius: '8px',
+                border: '1px solid rgba(255, 152, 0, 0.2)',
+                textAlign: 'left',
+                lineHeight: '1.4'
+              }}>
+                ⚠️ Real-time GPS is restricted on insecure HTTP connections. Please use <strong>Simulate</strong> to test location updates on your device.
+              </div>
+            )}
+
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.75rem',
+              padding: '0.75rem',
+              background: isSharingLocation ? 'rgba(0, 242, 254, 0.05)' : 'rgba(255,255,255,0.02)',
+              borderRadius: '8px',
+              border: isSharingLocation ? '1px solid hsla(190, 95%, 50%, 0.3)' : '1px solid var(--border-color)',
+              transition: 'all 0.3s'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                <div style={{ textAlign: 'left' }}>
+                  <span style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', color: 'white' }}>
+                    {isSharingLocation 
+                      ? (isSimulating ? '🔵 Sharing: Simulated' : '🟢 Sharing: Real GPS')
+                      : '⚪ Location Inactive'}
+                  </span>
+                  <span style={{ fontSize: '0.7rem', color: 'hsl(var(--text-secondary))' }}>
+                    {isSharingLocation ? 'Sharing with collaborators' : 'Location sharing offline'}
+                  </span>
+                </div>
+                
+                {isSharingLocation && (
+                  <button
+                    onClick={stopSharing}
+                    className="btn"
+                    style={{
+                      padding: '0.4rem 0.8rem',
+                      fontSize: '0.8rem',
+                      borderRadius: '6px',
+                      background: 'linear-gradient(135deg, hsl(350, 89%, 60%) 0%, hsla(350, 89%, 60%, 0.8) 100%)',
+                      color: 'white',
+                      border: 'none',
+                      fontWeight: 700,
+                      height: '32px',
+                      minHeight: '32px'
+                    }}
+                  >
+                    Stop
+                  </button>
+                )}
+              </div>
+
+              {!isSharingLocation && (
+                <div style={{ display: 'flex', gap: '0.5rem', width: '100%' }}>
+                  <button
+                    disabled={!navigator.geolocation}
+                    onClick={startSharing}
+                    className="btn"
+                    style={{
+                      flex: 1,
+                      padding: '0.4rem 0.8rem',
+                      fontSize: '0.8rem',
+                      borderRadius: '6px',
+                      background: 'linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--secondary)) 100%)',
+                      color: 'white',
+                      border: 'none',
+                      fontWeight: 700,
+                      height: '32px',
+                      opacity: navigator.geolocation ? 1 : 0.4,
+                      cursor: navigator.geolocation ? 'pointer' : 'not-allowed'
+                    }}
+                  >
+                    Share GPS
+                  </button>
+                  <button
+                    onClick={startSimulation}
+                    className="btn"
+                    style={{
+                      flex: 1,
+                      padding: '0.4rem 0.8rem',
+                      fontSize: '0.8rem',
+                      borderRadius: '6px',
+                      background: 'rgba(255, 255, 255, 0.05)',
+                      color: 'white',
+                      border: '1px solid var(--border-color)',
+                      fontWeight: 700,
+                      height: '32px',
+                      cursor: 'pointer'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
+                    }}
+                  >
+                    Simulate
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'hsl(var(--text-muted))', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                Collaborators Sharing ({Object.keys(liveLocations).length})
+              </span>
+              
+              {Object.keys(liveLocations).length === 0 ? (
+                <div style={{ padding: '1rem', textAlign: 'center', color: 'hsl(var(--text-muted))', fontSize: '0.8rem', background: 'rgba(0,0,0,0.1)', borderRadius: '8px' }}>
+                  No active live locations.
+                </div>
+              ) : (
+                Object.values(liveLocations).map((loc) => (
+                  <div key={loc.userId} style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '0.6rem 0.75rem',
+                    background: 'rgba(255,255,255,0.02)',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-color)'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <div style={{
+                        width: '8px',
+                        height: '8px',
+                        borderRadius: '50%',
+                        backgroundColor: 'hsl(var(--secondary))',
+                        animation: 'pulse-ring 1.5s infinite'
+                      }} />
+                      <div style={{ textAlign: 'left' }}>
+                        <span style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', color: 'white' }}>{loc.name}</span>
+                        <span style={{ fontSize: '0.7rem', color: 'hsl(var(--text-muted))' }}>
+                          Lat: {loc.latitude?.toFixed(4)}, Lng: {loc.longitude?.toFixed(4)}
+                        </span>
+                      </div>
+                    </div>
+                    
+                    <a
+                      href={`https://www.google.com/maps/search/?api=1&query=${loc.latitude},${loc.longitude}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn"
+                      style={{
+                        padding: '0.35rem 0.65rem',
+                        fontSize: '0.75rem',
+                        borderRadius: '6px',
+                        background: 'rgba(255,255,255,0.05)',
+                        border: '1px solid var(--border-color)',
+                        color: 'hsl(var(--secondary))',
+                        textDecoration: 'none',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.2rem',
+                        height: '28px',
+                        minHeight: '28px'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
+                      }}
+                    >
+                      🗺️ GMaps
+                    </a>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
       </section>
 
       {/* Main Panel */}
